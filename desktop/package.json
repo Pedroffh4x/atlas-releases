@@ -1,0 +1,28 @@
+{
+  "name": "atlas",
+  "productName": "Atlas",
+  "version": "1.0.0",
+  "description": "Atlas — análise de sites com acesso ao seu PC",
+  "main": "electron/main.cjs",
+  "author": "Atlas",
+  "license": "MIT",
+  "build": {
+    "appId": "app.atlas.desktop",
+    "productName": "Atlas",
+    "directories": { "output": "dist" },
+    "files": ["electron/**/*", "package.json"],
+    "win": {
+      "target": ["nsis"],
+      "icon": "electron/assets/icon.ico",
+      "artifactName": "Atlas-Setup.exe"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Atlas"
+    }
+  }
+}
