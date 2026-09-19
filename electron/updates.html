@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>Atlas — Atualizações</title>
+    <style>
+      * { box-sizing: border-box; }
+      body { margin: 0; background: #000; color: #e8f1ff; font-family: -apple-system, Segoe UI, sans-serif; padding: 40px; }
+      h1 { font-size: 13px; letter-spacing: 6px; color: #5aa2ff; margin: 0 0 24px; }
+      .card { border: 1px solid #12233d; background: #05080f; border-radius: 22px; padding: 26px; max-width: 640px; }
+      .linha { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #0e1a2b; font-size: 14px; }
+      .linha span:last-child { color: #8fb4e6; }
+      .versao { font-size: 34px; font-weight: 600; margin: 4px 0 18px; }
+      .notas { white-space: pre-wrap; color: #9fc0ea; font-size: 14px; margin: 12px 0 0; }
+      button { border: 0; border-radius: 999px; padding: 12px 22px; font-size: 14px; font-weight: 600; cursor: pointer; margin: 18px 10px 0 0; }
+      .primary { background: #1263ff; color: #fff; }
+      .ghost { background: #0d1726; color: #9fc0ea; }
+      .barra { height: 8px; background: #0d1726; border-radius: 999px; overflow: hidden; margin-top: 16px; }
+      .barra i { display: block; height: 100%; background: #1263ff; width: 0; transition: width .4s; }
+      .ok { color: #58d68d; }
+    </style>
+  </head>
+  <body>
+    <h1>ATLAS</h1>
+    <div class="card">
+      <div style="font-size:13px;color:#6f8db5">Versão instalada</div>
+      <div class="versao" id="versao">—</div>
+
+      <div class="linha"><span>Status</span><span id="status">Verificando...</span></div>
+      <div class="linha"><span>Última verificação</span><span id="checagem">—</span></div>
+      <div class="linha" id="linhaNova" style="display:none"><span>Nova versão</span><span id="nova">—</span></div>
+
+      <div class="notas" id="notas"></div>
+
+      <div id="acoes"></div>
+      <div class="barra" id="barraWrap" style="display:none"><i id="barra"></i></div>
+      <div id="progresso" style="font-size:13px;color:#8fb4e6;margin-top:10px"></div>
+    </div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      let info = null;
+
+      function marcarChecagem() {
+        $("checagem").textContent = new Date().toLocaleString("pt-BR");
+      }
+
+      function render() {
+        if (info && info.atualizacao_disponivel) {
+          $("status").textContent = "Atualização disponível";
+          $("linhaNova").style.display = "flex";
+          $("nova").textContent = info.version;
+          $("notas").textContent = info.notes || "";
+          $("acoes").innerHTML =
+            '<button class="primary" id="btAtualizar">Atualizar agora</button>' +
+            (info.mandatory ? "" : '<button class="ghost" id="btDepois">Lembrar mais tarde</button>');
+          $("btAtualizar").onclick = instalar;
+          const depois = $("btDepois");
+          if (depois) depois.onclick = () => { window.atlas.dismissUpdate(); info = null; render(); };
+        } else {
+          $("status").innerHTML = '<span class="ok">Seu Atlas está atualizado.</span>';
+          $("linhaNova").style.display = "none";
+          $("notas").textContent = "";
+          $("acoes").innerHTML = '<button class="ghost" id="btVerificar">Procurar atualizações</button>';
+          $("btVerificar").onclick = verificar;
+        }
+      }
+
+      async function verificar() {
+        $("status").textContent = "Verificando...";
+        const r = await window.atlas.checkUpdate();
+        marcarChecagem();
+        info = r && r.ok ? r.info : null;
+        render();
+      }
+
+      async function instalar() {
+        $("barraWrap").style.display = "block";
+        $("acoes").innerHTML = "";
+        const r = await window.atlas.installUpdate();
+        if (!r.ok) $("progresso").textContent = r.error;
+      }
+
+      window.atlas.onUpdateProgress((p) => {
+        const pct = p.total ? Math.round((p.feito / p.total) * 100) : 0;
+        $("barra").style.width = pct + "%";
+        const rotulo = { baixando: "Baixando atualização...", instalando: "Instalando...", erro: "Falhou" }[p.etapa] || "";
+        $("progresso").textContent = `${rotulo} ${p.mensagem || ""} ${pct ? pct + "%" : ""}`;
+      });
+
+      window.atlas.onUpdateAvailable((i) => { info = i; render(); });
+
+      (async () => {
+        const state = await window.atlas.getState();
+        $("versao").textContent = "Atlas " + state.version;
+        info = await window.atlas.getUpdate();
+        if (info) { marcarChecagem(); render(); } else { verificar(); }
+      })();
+    </script>
+  </body>
+</html>
