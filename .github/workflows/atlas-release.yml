@@ -1,0 +1,116 @@
+name: Atlas — gerar e publicar versão do Windows
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Número da nova versão (ex: 1.0.1)"
+        required: true
+      notes:
+        description: "Novidades desta versão"
+        required: false
+        default: "Correções e melhorias."
+      mandatory:
+        description: "Atualização obrigatória (true/false)"
+        required: false
+        default: "false"
+      callback_url:
+        description: "Endereço do site Atlas (ex: https://atlas.lovable.app)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # O app de desktop é montado a partir da pasta electron/ do projeto.
+      - name: Preparar pasta do aplicativo
+        shell: bash
+        run: |
+          cp -r electron desktop/electron
+          cd desktop
+          npm pkg set version=${{ inputs.version }}
+
+      - name: Instalar dependências
+        shell: bash
+        working-directory: desktop
+        run: npm install --no-save electron@33 electron-builder@25
+
+      - name: Gerar o instalador do Windows
+        shell: bash
+        working-directory: desktop
+        run: npx electron-builder --win nsis --publish never
+
+      # Pacote completo (fallback) + arquivos individuais (atualização diferencial).
+      - name: Montar pacote de atualização
+        shell: bash
+        working-directory: desktop
+        run: |
+          mkdir -p out/files
+          for f in electron/*.cjs electron/*.html package.json; do
+            cp "$f" "out/files/$(echo "$f" | tr '/' '__')"
+          done
+          7z a -tzip "out/atlas-update-${{ inputs.version }}.zip" electron package.json >/dev/null
+
+      - name: Publicar no GitHub Releases
+        shell: bash
+        working-directory: desktop
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "v${{ inputs.version }}" \
+            --title "Atlas ${{ inputs.version }}" \
+            --notes "${{ inputs.notes }}" \
+            dist/Atlas-Setup.exe \
+            "out/atlas-update-${{ inputs.version }}.zip" \
+            out/files/* || gh release upload "v${{ inputs.version }}" dist/Atlas-Setup.exe "out/atlas-update-${{ inputs.version }}.zip" out/files/* --clobber
+
+      - name: Avisar o Atlas (publicar a versão no site)
+        shell: bash
+        working-directory: desktop
+        env:
+          ATLAS_RELEASE_SECRET: ${{ secrets.ATLAS_RELEASE_SECRET }}
+          VERSION: ${{ inputs.version }}
+          NOTES: ${{ inputs.notes }}
+          MANDATORY: ${{ inputs.mandatory }}
+          CALLBACK: ${{ inputs.callback_url }}
+          REPO: ${{ github.repository }}
+        run: |
+          BASE="https://github.com/$REPO/releases/download/v$VERSION"
+          ZIP="out/atlas-update-$VERSION.zip"
+          export BASE
+          export PKG_SHA=$(sha256sum "$ZIP" | cut -d' ' -f1)
+          export PKG_SIZE=$(stat -c%s "$ZIP")
+          FILES="[]"
+          for f in electron/*.cjs electron/*.html package.json; do
+            NAME=$(echo "$f" | tr '/' '__')
+            SHA=$(sha256sum "$f" | cut -d' ' -f1)
+            SIZE=$(stat -c%s "$f")
+            FILES=$(node -e "const a=JSON.parse(process.argv[1]);a.push({path:process.argv[2],sha256:process.argv[3],size:Number(process.argv[4]),url:process.argv[5]});console.log(JSON.stringify(a))" "$FILES" "$f" "$SHA" "$SIZE" "$BASE/$NAME")
+          done
+          export FILES
+          node -e "
+            const body = {
+              version: process.env.VERSION,
+              notes: process.env.NOTES,
+              mandatory: process.env.MANDATORY === 'true',
+              package_url: process.env.BASE + '/atlas-update-' + process.env.VERSION + '.zip',
+              package_sha256: process.env.PKG_SHA,
+              package_size: Number(process.env.PKG_SIZE),
+              installer_url: process.env.BASE + '/Atlas-Setup.exe',
+              files: JSON.parse(process.env.FILES),
+            };
+            fetch(process.env.CALLBACK.replace(/\/+$/,'') + '/api/public/release-callback', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'x-atlas-secret': process.env.ATLAS_RELEASE_SECRET },
+              body: JSON.stringify(body),
+            }).then(async r => { console.log(r.status, await r.text()); if (!r.ok) process.exit(1); });
+          "
