@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>Atlas</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: #000;
+        color: #e9eef7;
+        font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+        display: flex;
+        justify-content: center;
+        padding: 48px 24px;
+      }
+      .wrap { width: 100%; max-width: 620px; }
+      .brand { font-size: 34px; font-weight: 700; letter-spacing: .3em; }
+      .sub { color: #7d8ba1; margin-top: 6px; font-size: 14px; }
+      .card {
+        margin-top: 28px;
+        border: 1px solid rgba(90, 150, 255, .22);
+        background: linear-gradient(180deg, rgba(20,40,80,.35), rgba(0,0,0,.4));
+        border-radius: 22px;
+        padding: 24px;
+      }
+      .row { display: flex; justify-content: space-between; gap: 16px; padding: 10px 0; border-bottom: 1px solid rgba(255,255,255,.06); font-size: 14px; }
+      .row:last-child { border-bottom: 0; }
+      .k { color: #7d8ba1; }
+      .v { color: #e9eef7; font-weight: 500; text-align: right; }
+      .dot { display:inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 8px; background: #3b82f6; }
+      .on { background: #22c55e; box-shadow: 0 0 10px #22c55e; }
+      .off { background: #64748b; }
+      .err { background: #ef4444; box-shadow: 0 0 10px #ef4444; }
+      .status { font-size: 18px; font-weight: 600; display: flex; align-items: center; }
+      .msg { color: #7d8ba1; font-size: 13px; margin-top: 6px; }
+      button {
+        border: 0; border-radius: 999px; padding: 12px 22px; font-size: 14px; font-weight: 600;
+        background: #1263ff; color: #fff; cursor: pointer;
+      }
+      button.ghost { background: rgba(255,255,255,.07); color: #cfe0ff; }
+      .actions { display: flex; gap: 10px; margin-top: 22px; flex-wrap: wrap; }
+      #update { display: none; margin-top: 22px; border-color: rgba(59,130,246,.5); }
+      .bar { height: 10px; border-radius: 999px; background: rgba(255,255,255,.08); overflow: hidden; margin-top: 12px; }
+      .bar > i { display: block; height: 100%; width: 0%; background: linear-gradient(90deg, #1263ff, #67e8f9); transition: width .3s; }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="brand">ATLAS</div>
+      <div class="sub">Seu computador conectado ao Atlas.</div>
+
+      <div class="card">
+        <div class="status"><span class="dot off" id="dot"></span><span id="state">Desconectado</span></div>
+        <div class="msg" id="msg">Iniciando...</div>
+
+        <div style="margin-top:18px">
+          <div class="row"><span class="k">Nome do computador</span><span class="v" id="host">—</span></div>
+          <div class="row"><span class="k">Sistema</span><span class="v" id="os">—</span></div>
+          <div class="row"><span class="k">Versão</span><span class="v" id="ver">—</span></div>
+          <div class="row"><span class="k">Última sincronização</span><span class="v" id="sync">—</span></div>
+        </div>
+
+        <div class="actions">
+          <button id="open">Abrir painel do Atlas</button>
+          <button class="ghost" id="check">Atualizações</button>
+          <button class="ghost" id="repair">Conectar de novo</button>
+        </div>
+      </div>
+
+      <div class="card" id="update">
+        <div style="font-size:17px;font-weight:600">Nova atualização disponível</div>
+        <div class="msg" id="upVersion"></div>
+        <div class="msg" id="upNotes"></div>
+        <div class="bar"><i id="upBar"></i></div>
+        <div class="msg" id="upMsg">O Atlas será atualizado automaticamente. Não feche o aplicativo.</div>
+      </div>
+    </div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      let lastSync = null;
+
+      function paint(status) {
+        const map = {
+          conectado: ["on", "Computador conectado"],
+          trabalhando: ["on", "Executando tarefa"],
+          erro: ["err", "Erro de conexão"],
+          desligado: ["off", "Desconectado"],
+        };
+        const [cls, label] = map[status.state] ?? ["off", "Desconectado"];
+        $("dot").className = "dot " + cls;
+        $("state").textContent = label;
+        $("msg").textContent = status.message ?? "";
+        if (status.state === "conectado" || status.state === "trabalhando") lastSync = Date.now();
+        tickSync();
+      }
+
+      function tickSync() {
+        if (!lastSync) { $("sync").textContent = "—"; return; }
+        const s = Math.round((Date.now() - lastSync) / 1000);
+        $("sync").textContent = s < 5 ? "há poucos segundos" : `há ${s} s`;
+      }
+      setInterval(tickSync, 1000);
+
+      async function load() {
+        const state = await window.atlas.getState();
+        $("host").textContent = state.hostname ?? "—";
+        $("os").textContent = state.os ?? "—";
+        $("ver").textContent = "Atlas " + state.version;
+        paint(state.status);
+      }
+
+      window.atlas.onStatus(paint);
+      $("open").onclick = () => window.atlas.openSite();
+      $("repair").onclick = () => window.atlas.openSetup();
+      $("check").onclick = () => window.atlas.openUpdates();
+
+      window.atlas.onUpdateAvailable((info) => {
+        $("update").style.display = "block";
+        $("upVersion").textContent = `Versão atual: ${info.versao_atual} · Nova versão: ${info.version}`;
+        $("upNotes").textContent = info.notes || "Correções e melhorias.";
+        window.atlas.installUpdate();
+      });
+
+      window.atlas.onUpdateProgress((p) => {
+        $("update").style.display = "block";
+        const pct = p.total ? Math.round((p.feito / p.total) * 100) : 0;
+        $("upBar").style.width = pct + "%";
+        $("upMsg").textContent =
+          p.etapa === "instalando" ? "Instalando... Reiniciando o Atlas em seguida." : `${p.mensagem} (${pct}%)`;
+      });
+
+      load();
+    </script>
+  </body>
+</html>
