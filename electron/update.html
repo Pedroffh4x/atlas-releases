@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8" />
+    <title>Atualização do Atlas</title>
+    <style>
+      :root { color-scheme: dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; min-height: 100vh; background: #000; color: #e8f1ff;
+        font-family: -apple-system, "Segoe UI", system-ui, sans-serif;
+        display: grid; place-items: center; padding: 24px;
+      }
+      .card {
+        width: 100%; max-width: 520px; padding: 30px;
+        border: 1px solid rgba(80,150,255,.28); border-radius: 26px;
+        background: linear-gradient(160deg, rgba(10,22,48,.92), rgba(0,0,0,.94));
+        box-shadow: 0 0 70px rgba(20,90,255,.2);
+        animation: rise .35s ease-out;
+      }
+      @keyframes rise { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+      .pill { display:inline-block; font-size:11px; letter-spacing:.16em; text-transform:uppercase; color:#8fd0ff;
+              border:1px solid rgba(120,190,255,.35); border-radius:999px; padding:4px 12px; }
+      h1 { margin: 14px 0 4px; font-size: 24px; letter-spacing: -.02em; }
+      .meta { color:#8fa6c6; font-size: 13px; margin-bottom: 18px; }
+      .notes { white-space: pre-wrap; font-size: 14px; line-height: 1.55; color: #cfe1f8;
+               background: rgba(255,255,255,.04); border-radius: 16px; padding: 16px; max-height: 220px; overflow:auto; }
+      .bar { height: 8px; border-radius: 999px; background: rgba(255,255,255,.08); margin-top: 18px; overflow: hidden; display:none; }
+      .bar > i { display:block; height:100%; width:0; background: linear-gradient(90deg,#1263ff,#6fd0ff); transition: width .25s; }
+      .status { margin-top: 10px; font-size: 13px; color: #8fa6c6; min-height: 18px; }
+      .row { display:flex; gap:10px; margin-top: 20px; }
+      button { flex:1; padding: 13px; border:0; border-radius:999px; cursor:pointer; font-size:15px; font-weight:600;
+               background:#1263ff; color:#fff; }
+      button:hover { opacity:.9; }
+      .ghost { background: transparent; color:#8fa6c6; border:1px solid rgba(120,170,255,.22); }
+      .erro { color:#ff8585; }
+      .ok { color:#6fe3a8; }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <span class="pill">Nova atualização disponível</span>
+      <h1 id="titulo">Atlas</h1>
+      <div class="meta" id="meta"></div>
+      <div class="notes" id="notas">Carregando novidades...</div>
+
+      <div class="bar" id="bar"><i id="fill"></i></div>
+      <div class="status" id="status"></div>
+
+      <div class="row">
+        <button id="agora">Atualizar agora</button>
+        <button id="depois" class="ghost">Depois</button>
+      </div>
+    </div>
+
+    <script>
+      const fmt = (b) => (!b ? "tamanho desconhecido" : b > 1048576 ? (b / 1048576).toFixed(1) + " MB" : Math.round(b / 1024) + " KB");
+      let info = null;
+
+      window.atlas.getUpdate().then((data) => {
+        info = data;
+        document.getElementById("titulo").textContent = `Atlas ${data.version}`;
+        const tamanho = data.delta_tamanho || data.tamanho_total || data.pacote?.size;
+        document.getElementById("meta").textContent =
+          `Você tem a versão ${data.versao_atual} · download de ${fmt(tamanho)}` + (data.mandatory ? " · atualização obrigatória" : "");
+        document.getElementById("notas").textContent = data.notes || "Melhorias e correções.";
+        if (data.mandatory) document.getElementById("depois").style.display = "none";
+      });
+
+      window.atlas.onUpdateProgress((p) => {
+        const bar = document.getElementById("bar");
+        bar.style.display = "block";
+        const pct = p.total ? Math.round((p.feito / p.total) * 100) : 10;
+        document.getElementById("fill").style.width = pct + "%";
+        document.getElementById("status").textContent = p.mensagem;
+      });
+
+      document.getElementById("agora").onclick = async () => {
+        document.getElementById("agora").disabled = true;
+        const status = document.getElementById("status");
+        status.className = "status";
+        status.textContent = "Preparando...";
+        const res = await window.atlas.installUpdate();
+        if (res.ok && res.pacoteCompleto) {
+          status.className = "status ok";
+          status.textContent = "Pacote completo baixado. Abrindo a pasta para você substituir os arquivos.";
+        } else if (res.ok) {
+          status.className = "status ok";
+          status.textContent = "Atualizado! Reiniciando o Atlas...";
+        } else {
+          status.className = "status erro";
+          status.textContent = res.error;
+          document.getElementById("agora").disabled = false;
+        }
+      };
+
+      document.getElementById("depois").onclick = () => window.atlas.dismissUpdate();
+    </script>
+  </body>
+</html>
